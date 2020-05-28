@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.Manifest;
@@ -16,6 +17,7 @@ import android.os.Environment;
 import androidx.annotation.RequiresApi;
 import androidx.core.content.ContextCompat;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -70,6 +72,7 @@ import org.json.JSONObject;
 
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.util.ArrayList;
@@ -396,7 +399,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
   public void setMessagingEnabled(WebView view, boolean enabled) {
     ((RNCWebView) view).setMessagingEnabled(enabled);
   }
-   
+
   @ReactProp(name = "incognito")
   public void setIncognito(WebView view, boolean enabled) {
     // Remove all previous cookies
@@ -646,7 +649,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
         public Bitmap getDefaultVideoPoster() {
           return Bitmap.createBitmap(50, 50, Bitmap.Config.ARGB_8888);
         }
-        
+
         @Override
         public void onShowCustomView(View view, CustomViewCallback callback) {
           if (mVideoView != null) {
@@ -742,13 +745,50 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
 
     @Override
     public boolean shouldOverrideUrlLoading(WebView view, String url) {
-      activeUrl = url;
-      dispatchEvent(
-        view,
-        new TopShouldStartLoadWithRequestEvent(
-          view.getId(),
-          createWebViewEvent(view, url)));
-      return true;
+//      activeUrl = url;
+//      dispatchEvent(
+//        view,
+//        new TopShouldStartLoadWithRequestEvent(
+//          view.getId(),
+//          createWebViewEvent(view, url)));
+//      return true;
+
+      //https://stackoverflow.com/questions/33151246/how-to-handle-intent-on-a-webview-url  避免 webview 请求到 deeplink 类型的链接 && 未安装 对应 app
+      // 时 报错，可 拦截 访问 deeplink 链接，正确访问
+      if (url.startsWith("openapp.jdmobile://")||url.startsWith("ctrip://")||url.startsWith("tbopen://")
+        ||url.startsWith("tmall://")||url.startsWith("kaola://")) {
+        Log.d("RNCWebViewManager", "准备拦截非http开头的链接，url= "+url);
+        try {
+          Context context = view.getContext();
+          Intent intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME);
+
+          if (intent != null) {
+            view.stopLoading();
+
+            PackageManager packageManager = context.getPackageManager();
+            ResolveInfo info = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
+            if (info != null) {
+              context.startActivity(intent);
+            } else {
+              String fallbackUrl = intent.getStringExtra("browser_fallback_url");
+
+              view.loadUrl(fallbackUrl);
+              Log.e("RNCWebViewManager", "fallbackUrl="+ fallbackUrl);
+              // or call external broswer
+//                    Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(fallbackUrl));
+//                    context.startActivity(browserIntent);
+            }
+
+            return true;
+          }
+        } catch (URISyntaxException e) {
+//          if (GeneralData.DEBUG) {
+//            Log.e(TAG, "Can't resolve intent://", e);
+//          }
+        }
+      }
+
+      return false;
     }
 
 
@@ -901,8 +941,8 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
       final String url = webView.getUrl();
       if (
         url != null
-        && activeUrl != null
-        && !url.equals(activeUrl)
+          && activeUrl != null
+          && !url.equals(activeUrl)
       ) {
         return;
       }
@@ -1119,16 +1159,16 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
 
       if (mOnScrollDispatchHelper.onScrollChanged(x, y)) {
         ScrollEvent event = ScrollEvent.obtain(
-                this.getId(),
-                ScrollEventType.SCROLL,
-                x,
-                y,
-                mOnScrollDispatchHelper.getXFlingVelocity(),
-                mOnScrollDispatchHelper.getYFlingVelocity(),
-                this.computeHorizontalScrollRange(),
-                this.computeVerticalScrollRange(),
-                this.getWidth(),
-                this.getHeight());
+          this.getId(),
+          ScrollEventType.SCROLL,
+          x,
+          y,
+          mOnScrollDispatchHelper.getXFlingVelocity(),
+          mOnScrollDispatchHelper.getYFlingVelocity(),
+          this.computeHorizontalScrollRange(),
+          this.computeVerticalScrollRange(),
+          this.getWidth(),
+          this.getHeight());
 
         dispatchEvent(this, event);
       }
